@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>시뮬레이티드 어닐링 시간표 생성기</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black text-white p-6 font-sans">
+
+  <h1 class="text-2xl font-bold mb-6">📅 시뮬레이티드 어닐링 기반 시간표 추천기</h1>
+
+  <!-- 입력 폼 -->
+  <div class="space-y-4 mb-6">
+    <div>
+      <label>1. 필수 수강 과목 (쉼표로 구분):</label><br>
+      <input type="text" id="requiredCourses" class="w-full text-black p-2 rounded" placeholder="예: 자료구조,기초글쓰기">
+    </div>
+
+    <div>
+      <label>2. 이미 수강한 과목 (쉼표로 구분):</label><br>
+      <input type="text" id="takenCourses" class="w-full text-black p-2 rounded" placeholder="예: C프로그래밍">
+    </div>
+
+    <div class="relative">
+      <label for="preferredType" class="flex items-center gap-2">
+        3. 선호 타입:
+        <span class="relative group cursor-pointer text-blue-400 text-lg">
+          ℹ️
+          <div class="absolute z-10 hidden group-hover:block bg-gray-800 text-white text-sm w-80 p-4 rounded-lg shadow-xl top-full mt-2 left-full ml-2 text-left">
+            <div class="font-bold mb-1">선호 타입 설명</div>
+            <p><b>열정형:</b> 듣고 싶은 수업은 꼭 듣기 (필수 포함)</p>
+            <p><b>슬리퍼형:</b> 오전 수업(1~3교시) 피하기</p>
+            <p><b>식사중시형:</b> 점심시간(4~5교시) 공강 확보</p>
+            <p><b>공강필요형:</b> 공강이 많을수록 좋음 (요일 분산)</p>
+          </div>
+        </span>
+      </label>
+      <select id="preferredType" class="text-black p-2 rounded mt-1 w-full">
+        <option value="열정형">열정형</option>
+        <option value="슬리퍼형">슬리퍼형</option>
+        <option value="식사중시형">식사중시형</option>
+        <option value="공강필요형">공강필요형</option>
+      </select>
+    </div>
+
+    <button onclick="generateSchedule()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+      시간표 추천 받기
+    </button>
+    <div id="loading" class="hidden text-center mt-3 text-sm">
+      <div class="inline-block bg-gray-100 text-black px-4 py-2 rounded shadow">
+        <svg class="animate-spin inline-block w-5 h-5 mr-2 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+        시간표를 계산 중입니다...
+      </div>
+    </div>
+  </div>
+
+  <!-- 탭 버튼 -->
+  <div id="tab-buttons" class="flex flex-wrap gap-2 mb-4"></div>
+
+  <!-- 시간표 출력 -->
+  <div id="tab-contents"></div>
+
+  <script>
+    async function generateSchedule() {
+      const required = document.getElementById("requiredCourses").value.split(",").map(s => s.trim()).filter(Boolean);
+      const taken = document.getElementById("takenCourses").value.split(",").map(s => s.trim()).filter(Boolean);
+      const type = document.getElementById("preferredType").value;
+
+      document.getElementById("loading").classList.remove("hidden");
+
+      const res = await fetch("/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          required_courses: required,
+          pre_taken_list: taken,
+          preferred_type: type,
+          n: 5
+        })
+      });
+
+      const data = await res.json();
+      document.getElementById("loading").classList.add("hidden");
+      renderSchedules(data);
+    }
+
+    function renderSchedules(schedules) {
+      const days = ["월", "화", "수", "목", "금"];
+      const colors = ["bg-red-500", "bg-blue-500", "bg-green-500", "bg-yellow-500", "bg-purple-500", "bg-pink-500", "bg-indigo-500"];
+      const tabButtons = document.getElementById("tab-buttons");
+      const tabContents = document.getElementById("tab-contents");
+      tabButtons.innerHTML = "";
+      tabContents.innerHTML = "";
+
+      schedules.forEach((schedule, idx) => {
+        const btn = document.createElement("button");
+        btn.textContent = `시간표 ${idx + 1} (비용: ${schedule.cost})`;
+        btn.className = `px-3 py-1 rounded ${idx === 0 ? 'bg-white text-black' : 'bg-gray-700'}`;
+        btn.onclick = () => switchTab(idx);
+        tabButtons.appendChild(btn);
+
+        const grid = document.createElement("div");
+        grid.className = `${idx === 0 ? '' : 'hidden'} tab-panel mb-10`;
+
+        let html = `
+          <div class="grid grid-cols-6 border border-gray-600 text-center text-sm">
+            <div class="bg-gray-800 font-bold p-1">교시</div>
+            ${days.map(d => `<div class="bg-gray-800 font-bold p-1">${d}</div>`).join('')}
+        `;
+
+        for (let i = 1; i <= 13; i++) {
+          html += `<div class="bg-gray-900 p-1">${i}교시</div>`;
+          for (const d of days) {
+            html += `<div id="cell-${idx}-${d}${i}" class="h-12 border border-gray-700 text-xs bg-black p-1 overflow-hidden"></div>`;
+          }
+        }
+
+        html += `</div>`;
+        grid.innerHTML = html;
+        tabContents.appendChild(grid);
+
+        schedule.courses.forEach((course, cidx) => {
+          course.time.forEach(slot => {
+            const cell = document.getElementById(`cell-${idx}-${slot}`);
+            if (cell) {
+              cell.textContent = course.name;
+              cell.classList.add(colors[cidx % colors.length], "text-white", "rounded-sm");
+            }
+          });
+        });
+      });
+    }
+
+    function switchTab(activeIdx) {
+      document.querySelectorAll('.tab-panel').forEach((panel, idx) => {
+        panel.classList.toggle('hidden', idx !== activeIdx);
+      });
+      document.querySelectorAll('#tab-buttons button').forEach((btn, idx) => {
+        btn.className = `px-3 py-1 rounded ${idx === activeIdx ? 'bg-white text-black' : 'bg-gray-700'}`;
+      });
+    }
+  </script>
+</body>
+</html>
